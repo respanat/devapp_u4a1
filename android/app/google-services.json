@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "452769889420",
+    "firebase_url": "https://vehiculosapp-37a3f-default-rtdb.firebaseio.com",
+    "project_id": "vehiculosapp-37a3f",
+    "storage_bucket": "vehiculosapp-37a3f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:452769889420:android:402033cbc17e9273890fa9",
+        "android_client_info": {
+          "package_name": "VehiculosApp.devweb2025"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaig5gG3UciV5INpgqs5J4z8YeIarEv00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:452769889420:android:e1526b95ab8890d3890fa9",
+        "android_client_info": {
+          "package_name": "com.devweb2025a.actividad3"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaig5gG3UciV5INpgqs5J4z8YeIarEv00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:452769889420:android:a44eafa232a2298e890fa9",
+        "android_client_info": {
+          "package_name": "com.example.actividad4"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaig5gG3UciV5INpgqs5J4z8YeIarEv00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
