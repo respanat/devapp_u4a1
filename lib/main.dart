@@ -3,8 +3,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:actividad4/firebase_options.dart';
-import 'package:actividad4/auth_screen.dart';
-import 'package:actividad4/home_screen.dart';
+import 'package:actividad4/pantalla_autorizacion.dart';
+import 'package:actividad4/pantalla_navegacion_principal.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +26,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Actividad4 Flutter',
+      title: 'Actividad 4 Flutter',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
@@ -40,9 +40,24 @@ class _MyAppState extends State<MyApp> {
             );
           }
           if (snapshot.hasData) {
-            return HomeScreen(auth: _auth, database: _database);
+            return MainNavigation(
+              auth: _auth,
+              database: _database,
+              onLogout: () async {
+                try {
+                  await _auth.signOut();
+                  print("Sesión cerrada exitosamente.");
+                } catch (e) {
+                  print("Error al cerrar sesión: $e");
+                }
+              },
+            );
           } else {
-            return AuthScreen(auth: _auth, database: _database);
+            return AuthScreen(
+              auth: _auth,
+              database: _database,
+              onAuthSuccess: () {},
+            );
           }
         },
       ),

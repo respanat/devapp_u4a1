@@ -1,3 +1,7 @@
+
+println("JAVA HOME: ${System.getenv("JAVA_HOME")}")
+println("JAVA VERSION: ${System.getProperty("java.version")}")
+
 allprojects {
     repositories {
         google()

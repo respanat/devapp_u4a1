@@ -74,4 +74,5 @@ class DefaultFirebaseOptions {
     databaseURL: 'https://vehiculosapp-37a3f-default-rtdb.firebaseio.com',
     storageBucket: 'vehiculosapp-37a3f.firebasestorage.app',
   );
+
 }

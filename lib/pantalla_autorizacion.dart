@@ -9,11 +9,11 @@ class AuthScreen extends StatefulWidget {
   final VoidCallback onAuthSuccess;
 
   const AuthScreen({
-    Key? key,
+    super.key,
     required this.auth,
     required this.database,
     required this.onAuthSuccess,
-  }) : super(key: key);
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -49,7 +49,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       // Buscar el email asociado al nombre de usuario en la Realtime Database
-      final usersRef = widget.database.ref("actividad3/Usuario");
+      final usersRef = widget.database.ref("actividad4/Usuario");
       final snapshot = await usersRef
           .orderByChild("username")
           .equalTo(usernameOrEmail)
@@ -138,7 +138,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
         // Guarda la información adicional del usuario en Firebase Realtime Database
         await widget.database
-            .ref("actividad3/Usuario")
+            .ref("actividad4/Usuario")
             .child(userId)
             .set(newUser.toJson());
         _showSnackBar("Registro exitoso y datos de usuario guardados.");
