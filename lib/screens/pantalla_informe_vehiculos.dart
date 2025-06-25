@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:actividad4/models/vehiculo.dart';
 import 'dart:async';
+import 'package:actividad4/services/vehiculo_service.dart';
 
 class PantallaInformeVehiculos extends StatefulWidget {
-  final FirebaseDatabase database;
+  final VehiculoService vehiculoService;
 
-  const PantallaInformeVehiculos({super.key, required this.database});
+  const PantallaInformeVehiculos({
+    super.key,
+    required this.vehiculoService,
+    required database,
+  });
 
   @override
   State<PantallaInformeVehiculos> createState() => _VehicleReportScreenState();
@@ -20,71 +24,41 @@ class _VehicleReportScreenState extends State<PantallaInformeVehiculos> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  late DatabaseReference _vehiclesRef;
-  StreamSubscription<DatabaseEvent>? _vehiclesSubscription;
-
   @override
   void initState() {
     super.initState();
-    _vehiclesRef = widget.database.ref("actividad4/Vehiculos");
-    _listenToVehicles();
+    _loadVehicles();
   }
 
-  void _listenToVehicles() {
+  Future<void> _loadVehicles() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    _vehiclesSubscription = _vehiclesRef.onValue.listen(
-      (event) {
-        if (!mounted) {
-          return;
-        }
-
-        final dataSnapshot = event.snapshot;
-        if (dataSnapshot.exists && dataSnapshot.value != null) {
-          final Map<dynamic, dynamic> vehiclesMap =
-              dataSnapshot.value as Map<dynamic, dynamic>;
-          final List<Vehiculo> fetchedVehicles = [];
-          vehiclesMap.forEach((key, value) {
-            final vehicle = Vehiculo.fromJson(value as Map<dynamic, dynamic>);
-            vehicle.id = key;
-            fetchedVehicles.add(vehicle);
-          });
-          setState(() {
-            _allVehiclesLoaded = fetchedVehicles;
-            _isLoading = false;
-            _errorMessage = null;
-            if (_searchController.text.isNotEmpty) {
-              _generateReport();
-            } else {
-              _filteredVehicles = List.from(_allVehiclesLoaded);
-              _reportMessage =
-                  "Total de vehículos: ${_allVehiclesLoaded.length}.";
-            }
-          });
+    try {
+      final fetchedVehicles = await widget.vehiculoService.getVehiculos();
+      if (!mounted) return;
+      setState(() {
+        _allVehiclesLoaded = fetchedVehicles;
+        _isLoading = false;
+        if (_searchController.text.isNotEmpty) {
+          _generateReport();
         } else {
-          setState(() {
-            _allVehiclesLoaded = [];
-            _filteredVehicles = [];
-            _isLoading = false;
-            _errorMessage = null;
-            _reportMessage = "No hay vehículos registrados.";
-          });
+          _filteredVehicles = List.from(_allVehiclesLoaded);
+          _reportMessage = "Total de vehículos: ${_allVehiclesLoaded.length}.";
         }
-      },
-      onError: (error) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _errorMessage = "Error al cargar vehículos: ${error.toString()}";
-        });
-        _showSnackBar(_errorMessage!);
-        print('Error al cargar vehículos: $error'); // Para depuración
-      },
-    );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "Error al cargar vehículos: ${e.toString()}";
+      });
+      _showSnackBar(_errorMessage!);
+      print('Error al cargar vehículos: $e'); // Para depuración
+    }
   }
 
   void _generateReport() {
@@ -111,12 +85,14 @@ class _VehicleReportScreenState extends State<PantallaInformeVehiculos> {
             vehiculo.cilindraje.toString().toLowerCase().contains(filterLower);
       }).toList();
 
+      if (!mounted) return;
       setState(() {
         _filteredVehicles = results;
         _reportMessage =
             "Resultados para: '$parameter'. ${_filteredVehicles.length} coincidencias.";
       });
     } else {
+      if (!mounted) return;
       setState(() {
         _filteredVehicles = List.from(_allVehiclesLoaded);
         _reportMessage = "Total de vehículos: ${_allVehiclesLoaded.length}.";
@@ -134,7 +110,6 @@ class _VehicleReportScreenState extends State<PantallaInformeVehiculos> {
 
   @override
   void dispose() {
-    _vehiclesSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -207,14 +182,11 @@ class _VehicleReportScreenState extends State<PantallaInformeVehiculos> {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      headingRowColor:
-                          MaterialStateProperty.resolveWith<Color?>((
-                            Set<MaterialState> states,
-                          ) {
-                            return Theme.of(
-                              context,
-                            ).primaryColor.withOpacity(0.1);
-                          }),
+                      headingRowColor: WidgetStateProperty.resolveWith<Color?>((
+                        Set<WidgetState> states,
+                      ) {
+                        return Theme.of(context).primaryColor.withOpacity(0.1);
+                      }),
                       border: TableBorder.all(color: Colors.grey.shade300),
                       columnSpacing: 12,
                       dataRowMinHeight: 40,

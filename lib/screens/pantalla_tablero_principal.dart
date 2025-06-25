@@ -1,20 +1,26 @@
+// ignore_for_file: unused_import
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:proximity_sensor/proximity_sensor.dart';
 import 'dart:async';
+import 'package:actividad4/services/usuario_service.dart';
+import 'package:actividad4/services/vehiculo_service.dart';
 
 class MainDashboardScreen extends StatefulWidget {
   final FirebaseAuth auth;
-  final FirebaseDatabase database;
   final VoidCallback onLogout;
+  final UsuarioService usuarioService;
+  final VehiculoService vehiculoService;
 
   const MainDashboardScreen({
     super.key,
     required this.auth,
-    required this.database,
     required this.onLogout,
+    required this.usuarioService,
+    required this.vehiculoService,
+    required database,
   });
 
   @override
@@ -30,11 +36,9 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   bool _showAccelerometerMessage = false;
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
 
-  final double _shakeThresholdGravity =
-      12.0; // Fuerza de gravedad mínima para una "sacudida"
-  final int _shakeSlopTimeMs =
-      500; // Tiempo máximo entre dos sacudidas consecutivas
-  final int _shakeCountNeeded = 2; // Número de sacudidas necesarias
+  final double _shakeThresholdGravity = 12.0;
+  final int _shakeSlopTimeMs = 500;
+  final int _shakeCountNeeded = 2;
 
   int _mShakeCount = 0;
   int _mShakeTimestamp = 0;
@@ -43,22 +47,23 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   bool _showMagnetometerMessage = false;
   StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
   double _initialMagneticFieldStrength = 0.0;
-  final double _magneticFieldThreshold =
-      80.0; // Umbral de cambio para detectar un "evento"
+  final double _magneticFieldThreshold = 80.0;
 
   @override
   void initState() {
     super.initState();
     _initProximitySensor();
     _initAccelerometerSensor();
-    _initMagnetometerSensor(); // Inicializa el nuevo sensor
+    _initMagnetometerSensor();
   }
 
   void _initProximitySensor() {
     _proximitySubscription = ProximitySensor.events.listen((int event) {
-      setState(() {
-        _isProximityDetected = event > 0;
-      });
+      if (mounted) {
+        setState(() {
+          _isProximityDetected = event > 0;
+        });
+      }
     });
   }
 
@@ -69,7 +74,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
           final double y = event.y;
           final double z = event.z;
 
-          final double gForce = (x * x + y * y + z * z); // Magnitud cuadrada
+          final double gForce = (x * x + y * y + z * z);
 
           if (gForce > _shakeThresholdGravity * _shakeThresholdGravity) {
             final int now = DateTime.now().millisecondsSinceEpoch;
@@ -86,9 +91,11 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             _mShakeCount++;
 
             if (_mShakeCount >= _shakeCountNeeded) {
-              setState(() {
-                _showAccelerometerMessage = true;
-              });
+              if (mounted) {
+                setState(() {
+                  _showAccelerometerMessage = true;
+                });
+              }
               _mShakeCount = 0;
               Future.delayed(const Duration(seconds: 3), () {
                 if (mounted) {
@@ -103,6 +110,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   }
 
   void _initMagnetometerSensor() {
+    // Tomar la primera lectura para el valor inicial
     _magnetometerSubscription = SensorsPlatform.instance.magnetometerEvents
         .take(1)
         .listen((MagnetometerEvent event) {
@@ -111,11 +119,11 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             event.y,
             event.z,
           );
-          print(
-            'Initial magnetic field: $_initialMagneticFieldStrength µT',
-          ); // Para depuración
+          print('Initial magnetic field: $_initialMagneticFieldStrength µT');
 
           _magnetometerSubscription?.cancel(); // Cancela la suscripción inicial
+
+          // Luego, suscribe para monitorear cambios
           _magnetometerSubscription = SensorsPlatform
               .instance
               .magnetometerEvents
@@ -128,10 +136,11 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
 
                 if ((currentStrength - _initialMagneticFieldStrength).abs() >
                     _magneticFieldThreshold) {
-                  setState(() {
-                    _showMagnetometerMessage = true;
-                  });
-                  // Después de 3 segundos, oculta el mensaje y restablece el valor inicial
+                  if (mounted) {
+                    setState(() {
+                      _showMagnetometerMessage = true;
+                    });
+                  }
                   Future.delayed(const Duration(seconds: 3), () {
                     if (mounted) {
                       setState(() {
@@ -147,16 +156,14 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   }
 
   double _calculateMagneticFieldStrength(double x, double y, double z) {
-    return (x * x + y * y + z * z); // Magnitud cuadrada para comparación
-    // return Math.sqrt(x * x + y * y + z * z); // Magnitud real si se necesita
+    return (x * x + y * y + z * z);
   }
 
   @override
   void dispose() {
     _proximitySubscription?.cancel();
     _accelerometerSubscription?.cancel();
-    _magnetometerSubscription
-        ?.cancel(); // Cancela la suscripción del magnetómetro
+    _magnetometerSubscription?.cancel();
     super.dispose();
   }
 
@@ -167,7 +174,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Menú Principal"),
+        title: const Text("Menú de Gestión"),
         automaticallyImplyLeading: false,
       ),
       body: Center(
@@ -225,7 +232,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () =>
-                        Navigator.of(context).pushNamed('/manage_vehicles'),
+                        Navigator.of(context).pushNamed('/gestion_vehiculos'),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16.0),
                     ),
@@ -238,7 +245,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () =>
-                        Navigator.of(context).pushNamed('/manage_users'),
+                        Navigator.of(context).pushNamed('/gestion_usuarios'),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16.0),
                     ),
@@ -251,7 +258,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () =>
-                        Navigator.of(context).pushNamed('/user_report'),
+                        Navigator.of(context).pushNamed('/reporte_usuarios'),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16.0),
                     ),
@@ -264,7 +271,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () =>
-                        Navigator.of(context).pushNamed('/vehicle_report'),
+                        Navigator.of(context).pushNamed('/reporte_vehiculos'),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16.0),
                     ),

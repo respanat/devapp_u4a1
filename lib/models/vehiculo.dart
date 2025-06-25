@@ -40,7 +40,7 @@ class Vehiculo {
       numPuestos: (json['numPuestos'] as int?) ?? 0,
       numPuertas: (json['numPuertas'] as int?) ?? 0,
       combustible: json['combustible'] as String? ?? '',
-      kilometros: (json['kilometros'] as num?)?.toDouble() ?? 0.0, // Convertimos a double y aseguramos 0.0
+      kilometros: (json['kilometros'] as num?)?.toDouble() ?? 0.0,
       cilindraje: (json['cilindraje'] as num?)?.toDouble() ?? 0.0,
       categoria: json['categoria'] as String? ?? '',
     );

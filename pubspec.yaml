@@ -32,7 +32,7 @@ dependencies:
     sdk: flutter
   firebase_core: ^3.14.0
   firebase_auth: ^5.6.0
-  firebase_database: ^11.3.7
+  http: ^1.2.1
   sensors_plus: ^6.1.1
   sensors_plus_platform_interface: ^2.0.1
   proximity_sensor: ^1.0.3

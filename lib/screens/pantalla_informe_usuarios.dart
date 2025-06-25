@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:actividad4/models/usuario.dart';
+import 'dart:async';
+import 'package:actividad4/services/usuario_service.dart';
 
 class PantallaInformeUsuarios extends StatefulWidget {
-  final FirebaseDatabase database;
+  final UsuarioService usuarioService;
 
-  const PantallaInformeUsuarios({super.key, required this.database});
+  const PantallaInformeUsuarios({
+    super.key,
+    required this.usuarioService,
+    required database,
+  });
 
   @override
   State<PantallaInformeUsuarios> createState() => _UserReportScreenState();
@@ -19,71 +24,42 @@ class _UserReportScreenState extends State<PantallaInformeUsuarios> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  // Referencia a la base de datos
-  late DatabaseReference _usersRef;
-  late Stream<DatabaseEvent> _usersStream;
-
   @override
   void initState() {
     super.initState();
-    _usersRef = widget.database.ref("actividad4/Usuario");
-    _usersStream = _usersRef.onValue;
-    _listenToUsers(); // Inicia el listener para cargar todos los usuarios
+    _loadUsers();
   }
 
-  // Función para escuchar los cambios en la base de datos
-  void _listenToUsers() {
+  Future<void> _loadUsers() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-
-    _usersStream.listen(
-      (event) {
-        final dataSnapshot = event.snapshot;
-        if (dataSnapshot.exists && dataSnapshot.value != null) {
-          final Map<dynamic, dynamic> usersMap =
-              dataSnapshot.value as Map<dynamic, dynamic>;
-          final List<Usuario> fetchedUsers = [];
-          usersMap.forEach((key, value) {
-            final user = Usuario.fromJson(value as Map<dynamic, dynamic>);
-            user.id = key; // Asigna el ID (clave de Firebase) al objeto Usuario
-            fetchedUsers.add(user);
-          });
-          setState(() {
-            _allUsersLoaded = fetchedUsers;
-            _isLoading = false;
-            _errorMessage = null;
-            // Si ya hay un parámetro de filtro, aplicar el filtro nuevamente
-            if (_searchController.text.isNotEmpty) {
-              _generateReport();
-            } else {
-              _filteredUsers = List.from(_allUsersLoaded);
-              _reportMessage = "Total de usuarios: ${_allUsersLoaded.length}.";
-            }
-          });
+    try {
+      final fetchedUsers = await widget.usuarioService.getUsers();
+      if (!mounted) return;
+      setState(() {
+        _allUsersLoaded = fetchedUsers;
+        _isLoading = false;
+        if (_searchController.text.isNotEmpty) {
+          _generateReport();
         } else {
-          setState(() {
-            _allUsersLoaded = [];
-            _isLoading = false;
-            _errorMessage = null;
-            _reportMessage = "No hay usuarios registrados.";
-            _filteredUsers = [];
-          });
+          _filteredUsers = List.from(_allUsersLoaded);
+          _reportMessage = "Total de usuarios: ${_allUsersLoaded.length}.";
         }
-      },
-      onError: (error) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = "Error al cargar usuarios: ${error.toString()}";
-        });
-        _showSnackBar(_errorMessage!);
-        print('Error al cargar usuarios: $error'); // Para depuración
-      },
-    );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "Error al cargar usuarios: ${e.toString()}";
+      });
+      _showSnackBar(_errorMessage!);
+      print('Error al cargar usuarios: $e'); // Para depuración
+    }
   }
 
-  // Función para generar el informe de usuarios basado en el filtro
   void _generateReport() {
     final parameter = _searchController.text.trim();
     if (parameter.isNotEmpty) {
@@ -93,12 +69,14 @@ class _UserReportScreenState extends State<PantallaInformeUsuarios> {
             user.email.toLowerCase().contains(parameter.toLowerCase());
       }).toList();
 
+      if (!mounted) return;
       setState(() {
         _filteredUsers = results;
         _reportMessage =
             "Informe de usuarios para: '$parameter'. ${_filteredUsers.length} resultados.";
       });
     } else {
+      if (!mounted) return;
       setState(() {
         _filteredUsers = List.from(_allUsersLoaded);
         _reportMessage = "Total de usuarios: ${_allUsersLoaded.length}.";
@@ -108,6 +86,7 @@ class _UserReportScreenState extends State<PantallaInformeUsuarios> {
 
   // Función para mostrar SnackBar
   void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
@@ -127,7 +106,7 @@ class _UserReportScreenState extends State<PantallaInformeUsuarios> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            Navigator.of(context).pop(); // Navega hacia atrás
+            Navigator.of(context).pop();
           },
         ),
       ),
@@ -182,19 +161,15 @@ class _UserReportScreenState extends State<PantallaInformeUsuarios> {
               if (_filteredUsers.isNotEmpty)
                 Expanded(
                   child: SingleChildScrollView(
-                    // Permite desplazamiento horizontal si la tabla es ancha
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      headingRowColor:
-                          MaterialStateProperty.resolveWith<Color?>((
-                            Set<MaterialState> states,
-                          ) {
-                            return Theme.of(
-                              context,
-                            ).primaryColor.withOpacity(0.1);
-                          }),
+                      headingRowColor: WidgetStateProperty.resolveWith<Color?>((
+                        Set<WidgetState> states,
+                      ) {
+                        return Theme.of(context).primaryColor.withOpacity(0.1);
+                      }),
                       border: TableBorder.all(color: Colors.grey.shade300),
-                      columnSpacing: 20, // Espaciado entre columnas
+                      columnSpacing: 20,
                       columns: const <DataColumn>[
                         DataColumn(
                           label: Expanded(

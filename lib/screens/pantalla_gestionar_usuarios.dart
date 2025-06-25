@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:actividad4/models/usuario.dart';
+import 'package:actividad4/services/usuario_service.dart';
+import 'dart:async';
 
 class PantallaGestionarUsuarios extends StatefulWidget {
-  final FirebaseDatabase database;
+  final UsuarioService usuarioService;
 
-  const PantallaGestionarUsuarios({super.key, required this.database});
+  const PantallaGestionarUsuarios({
+    super.key,
+    required this.usuarioService,
+    required database,
+  });
 
   @override
   State<PantallaGestionarUsuarios> createState() =>
@@ -15,70 +20,51 @@ class PantallaGestionarUsuarios extends StatefulWidget {
 class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
   List<Usuario> _usuarios = [];
   String? _errorMessage;
-  bool _showUserDialog = false;
+  bool _isLoading = false;
   Usuario? _selectedUser;
 
-  // Controladores para los campos del diálogo de edición
   final TextEditingController _usernameInputController =
       TextEditingController();
   final TextEditingController _nombreInputController = TextEditingController();
   final TextEditingController _emailInputController = TextEditingController();
 
-  // Referencia a la base de datos
-  late DatabaseReference _usersRef;
-  late Stream<DatabaseEvent> _usersStream;
-
   @override
   void initState() {
     super.initState();
-    _usersRef = widget.database.ref("actividad4/Usuario");
-    _usersStream = _usersRef.onValue;
-    _listenToUsers();
+    _loadUsers();
   }
 
-  // Función para escuchar los cambios en la base de datos
-  void _listenToUsers() {
-    _usersStream.listen(
-      (event) {
-        final dataSnapshot = event.snapshot;
-        if (dataSnapshot.exists && dataSnapshot.value != null) {
-          final Map<dynamic, dynamic> usersMap =
-              dataSnapshot.value as Map<dynamic, dynamic>;
-          final List<Usuario> fetchedUsers = [];
-          usersMap.forEach((key, value) {
-            final user = Usuario.fromJson(value as Map<dynamic, dynamic>);
-            user.id = key;
-            fetchedUsers.add(user);
-          });
-          setState(() {
-            _usuarios = fetchedUsers;
-            _errorMessage = null;
-          });
-        } else {
-          setState(() {
-            _usuarios = [];
-            _errorMessage = null;
-          });
-        }
-      },
-      onError: (error) {
-        setState(() {
-          _errorMessage = "Error al cargar usuarios: ${error.toString()}";
-        });
-        _showSnackBar(_errorMessage!);
-        print('Error al cargar usuarios: $error'); // Para depuración
-      },
-    );
+  Future<void> _loadUsers() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final fetchedUsers = await widget.usuarioService.getUsers();
+      if (!mounted) return;
+      setState(() {
+        _usuarios = fetchedUsers;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "Error al cargar usuarios: ${e.toString()}";
+      });
+      _showSnackBar(_errorMessage!);
+      print('Error al cargar usuarios: $e');
+    }
   }
 
-  // Función para mostrar SnackBar (equivalente a Toast)
   void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // Función para limpiar el formulario del diálogo
   void _clearForm() {
     _selectedUser = null;
     _usernameInputController.clear();
@@ -88,13 +74,10 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
 
   // --- Lógica de Edición de Usuario ---
   void _editUser(Usuario userToEdit) {
-    setState(() {
-      _selectedUser = userToEdit;
-      _usernameInputController.text = userToEdit.username;
-      _nombreInputController.text = userToEdit.nombre;
-      _emailInputController.text = userToEdit.email;
-      _showUserDialog = true;
-    });
+    _selectedUser = userToEdit;
+    _usernameInputController.text = userToEdit.username;
+    _nombreInputController.text = userToEdit.nombre;
+    _emailInputController.text = userToEdit.email;
     _showEditUserDialog();
   }
 
@@ -102,8 +85,9 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
   Future<void> _deleteUser(Usuario userToDelete) async {
     try {
       if (userToDelete.id.isNotEmpty) {
-        await _usersRef.child(userToDelete.id).remove();
+        await widget.usuarioService.deleteUser(userToDelete.id);
         _showSnackBar("Usuario eliminado exitosamente");
+        await _loadUsers();
       } else {
         _showSnackBar("Error: ID de usuario no válido para eliminar.");
       }
@@ -114,7 +98,7 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
   }
 
   // --- Lógica para Guardar Cambios (Editar) ---
-  Future<void> _saveUserChanges() async {
+  Future<void> _saveUserChanges(BuildContext dialogContext) async {
     if (_selectedUser == null) return;
 
     if (_usernameInputController.text.isEmpty ||
@@ -133,12 +117,13 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
     );
 
     try {
-      await _usersRef.child(updatedUser.id).set(updatedUser.toJson());
+      await widget.usuarioService.updateUser(updatedUser);
       _showSnackBar("Usuario actualizado exitosamente");
-      setState(() {
-        _showUserDialog = false;
-        _clearForm();
-      });
+      if (mounted) {
+        Navigator.of(dialogContext).pop();
+      }
+      _clearForm();
+      await _loadUsers();
     } catch (e) {
       _showSnackBar("Error al actualizar usuario: ${e.toString()}");
       print('Error al actualizar usuario: $e'); // Para depuración
@@ -149,69 +134,65 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
   void _showEditUserDialog() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Editar Usuario"),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                TextField(
-                  controller: _usernameInputController,
-                  decoration: const InputDecoration(
-                    labelText: "Nombre de Usuario",
-                    border: OutlineInputBorder(),
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return PopScope(
+          canPop: false,
+          onPopInvoked: (didPop) {
+            if (didPop) return;
+            _clearForm();
+            Navigator.of(dialogContext).pop();
+          },
+          child: AlertDialog(
+            title: const Text("Editar Usuario"),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  TextField(
+                    controller: _usernameInputController,
+                    decoration: const InputDecoration(
+                      labelText: "Nombre de Usuario",
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8.0),
-                TextField(
-                  controller: _nombreInputController,
-                  decoration: const InputDecoration(
-                    labelText: "Nombre Completo",
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 8.0),
+                  TextField(
+                    controller: _nombreInputController,
+                    decoration: const InputDecoration(
+                      labelText: "Nombre Completo",
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8.0),
-                TextField(
-                  controller: _emailInputController,
-                  decoration: const InputDecoration(
-                    labelText: "Correo Electrónico",
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 8.0),
+                  TextField(
+                    controller: _emailInputController,
+                    decoration: const InputDecoration(
+                      labelText: "Correo Electrónico",
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
                   ),
-                  keyboardType: TextInputType.emailAddress,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text("Cancelar"),
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  _showUserDialog = false;
+            actions: <Widget>[
+              TextButton(
+                child: const Text("Cancelar"),
+                onPressed: () {
                   _clearForm();
-                });
-              },
-            ),
-            ElevatedButton(
-              child: const Text("Guardar Cambios"),
-              onPressed: () {
-                _saveUserChanges();
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
+                  Navigator.of(dialogContext).pop();
+                },
+              ),
+              ElevatedButton(
+                onPressed: () => _saveUserChanges(dialogContext),
+                child: const Text("Guardar Cambios"),
+              ),
+            ],
+          ),
         );
       },
-    ).then((_) {
-      if (_showUserDialog) {
-        setState(() {
-          _showUserDialog = false;
-          _clearForm();
-        });
-      }
-    });
+    );
   }
 
   @override
@@ -231,7 +212,7 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            Navigator.of(context).pop(); // Navega hacia atrás
+            Navigator.of(context).pop();
           },
         ),
       ),
@@ -239,20 +220,24 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: <Widget>[
-            if (_errorMessage != null)
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_errorMessage != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text(
                   _errorMessage!,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
-              ),
-            if (_usuarios.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  "No hay usuarios registrados.",
-                  style: TextStyle(fontSize: 16),
+              )
+            else if (_usuarios.isEmpty)
+              const Expanded(
+                child: Center(
+                  child: Text(
+                    "No hay usuarios registrados.",
+                    style: TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               )
             else
@@ -265,11 +250,10 @@ class _GestionUsuariosScreenState extends State<PantallaGestionarUsuarios> {
                       usuario: usuario,
                       onEdit: _editUser,
                       onDelete: _deleteUser,
-                      showActions: true, // Mostrar acciones en esta pantalla
+                      showActions: true,
                     );
                   },
-                  separatorBuilder: (context, index) =>
-                      const Divider(), // Separador entre elementos
+                  separatorBuilder: (context, index) => const Divider(),
                 ),
               ),
           ],

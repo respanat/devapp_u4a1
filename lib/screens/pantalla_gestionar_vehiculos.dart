@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:actividad4/models/vehiculo.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 
+import 'package:actividad4/services/vehiculo_service.dart';
+
 class PantallaGestionarVehiculos extends StatefulWidget {
-  final FirebaseDatabase database;
   final VoidCallback onBack;
+  final VehiculoService vehiculoService;
 
   const PantallaGestionarVehiculos({
     super.key,
-    required this.database,
     required this.onBack,
+    required this.vehiculoService,
+    required database,
   });
 
   @override
@@ -23,6 +25,7 @@ class PantallaGestionarVehiculos extends StatefulWidget {
 class _ManageVehiclesScreenState extends State<PantallaGestionarVehiculos> {
   final List<Vehiculo> _vehicles = [];
   Vehiculo? _selectedVehicle;
+  bool _isLoading = false;
 
   final TextEditingController _placaController = TextEditingController();
   final TextEditingController _marcaController = TextEditingController();
@@ -38,48 +41,35 @@ class _ManageVehiclesScreenState extends State<PantallaGestionarVehiculos> {
 
   final Uuid _uuid = const Uuid();
 
-  late DatabaseReference _vehiclesRef;
-  StreamSubscription<DatabaseEvent>? _vehiclesSubscription;
-
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   @override
   void initState() {
     super.initState();
-    _vehiclesRef = widget.database.ref("actividad4/Vehiculos");
-    _listenToVehicles();
+    _loadVehicles();
   }
 
-  void _listenToVehicles() {
-    _vehiclesSubscription = _vehiclesRef.onValue.listen(
-      (event) {
-        if (!mounted) {
-          return;
-        }
-
-        final dataSnapshot = event.snapshot;
-        if (dataSnapshot.exists && dataSnapshot.value != null) {
-          final Map<dynamic, dynamic> vehiclesMap =
-              dataSnapshot.value as Map<dynamic, dynamic>;
-          _vehicles.clear();
-          vehiclesMap.forEach((key, value) {
-            final vehicle = Vehiculo.fromJson(value as Map<dynamic, dynamic>);
-            vehicle.id = key;
-            _vehicles.add(vehicle);
-          });
-          setState(() {});
-        } else {
-          setState(() {
-            _vehicles.clear();
-          });
-        }
-      },
-      onError: (error) {
-        if (!mounted) return;
-        _showSnackBar("Error al cargar vehículos: ${error.toString()}");
-        print('Error al cargar vehículos: $error');
-      },
-    );
+  Future<void> _loadVehicles() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final fetchedVehicles = await widget.vehiculoService.getVehiculos();
+      if (!mounted) return;
+      setState(() {
+        _vehicles.clear();
+        _vehicles.addAll(fetchedVehicles);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+      _showSnackBar("Error al cargar vehículos: ${e.toString()}");
+      print('Error al cargar vehículos: $e');
+    }
   }
 
   void _showSnackBar(String message) {
@@ -102,7 +92,6 @@ class _ManageVehiclesScreenState extends State<PantallaGestionarVehiculos> {
     _kilometrosController.clear();
     _cilindrajeController.clear();
     _categoriaController.clear();
-    // Reset validation state
     _formKey.currentState?.reset();
   }
 
@@ -125,8 +114,9 @@ class _ManageVehiclesScreenState extends State<PantallaGestionarVehiculos> {
   Future<void> _deleteVehicle(Vehiculo vehicleToDelete) async {
     try {
       if (vehicleToDelete.id.isNotEmpty) {
-        await _vehiclesRef.child(vehicleToDelete.id).remove();
+        await widget.vehiculoService.deleteVehicle(vehicleToDelete.id);
         _showSnackBar("Vehículo eliminado exitosamente");
+        await _loadVehicles();
       } else {
         _showSnackBar("Error: ID de vehículo no válido para eliminar.");
       }
@@ -171,16 +161,19 @@ class _ManageVehiclesScreenState extends State<PantallaGestionarVehiculos> {
     );
 
     try {
-      await _vehiclesRef.child(newVehicle.id).set(newVehicle.toJson());
-      _showSnackBar(
-        _selectedVehicle == null
-            ? "Vehículo añadido exitosamente"
-            : "Vehículo actualizado exitosamente",
-      );
+      if (_selectedVehicle == null) {
+        await widget.vehiculoService.createVehicle(newVehicle);
+        _showSnackBar("Vehículo añadido exitosamente");
+      } else {
+        await widget.vehiculoService.updateVehicle(newVehicle);
+        _showSnackBar("Vehículo actualizado exitosamente");
+      }
+
       _clearForm();
       if (mounted) {
         Navigator.of(dialogContext).pop();
       }
+      await _loadVehicles();
     } catch (e) {
       _showSnackBar("Error al guardar vehículo: ${e.toString()}");
       print('Error al guardar vehículo: $e');
@@ -406,7 +399,6 @@ class _ManageVehiclesScreenState extends State<PantallaGestionarVehiculos> {
 
   @override
   void dispose() {
-    _vehiclesSubscription?.cancel();
     _placaController.dispose();
     _marcaController.dispose();
     _modeloController.dispose();
@@ -435,7 +427,9 @@ class _ManageVehiclesScreenState extends State<PantallaGestionarVehiculos> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: <Widget>[
-            if (_vehicles.isEmpty)
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_vehicles.isEmpty)
               const Expanded(
                 child: Center(
                   child: Text(

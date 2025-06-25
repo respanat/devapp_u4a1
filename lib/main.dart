@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:actividad4/firebase_options.dart';
-import 'package:actividad4/pantalla_autorizacion.dart';
-import 'package:actividad4/pantalla_navegacion_principal.dart';
+import 'firebase_options.dart';
+import 'package:actividad4/screens/pantalla_autorizacion.dart';
+import 'package:actividad4/screens/pantalla_navegacion_principal.dart';
+import 'package:actividad4/services/usuario_service.dart';
+import 'package:actividad4/services/vehiculo_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +22,12 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final UsuarioService _usuarioService = UsuarioService(
+    auth: FirebaseAuth.instance,
+  );
+  final VehiculoService _vehiculoService = VehiculoService(
+    auth: FirebaseAuth.instance,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +48,8 @@ class _MyAppState extends State<MyApp> {
           if (snapshot.hasData) {
             return MainNavigation(
               auth: _auth,
-              database: _database,
+              usuarioService: _usuarioService,
+              vehiculoService: _vehiculoService,
               onLogout: () async {
                 try {
                   await _auth.signOut();
@@ -51,12 +58,15 @@ class _MyAppState extends State<MyApp> {
                   print("Error al cerrar sesión: $e");
                 }
               },
+              database: null,
             );
           } else {
             return AuthScreen(
               auth: _auth,
-              database: _database,
+              usuarioService: _usuarioService,
+              vehiculoService: _vehiculoService,
               onAuthSuccess: () {},
+              database: null,
             );
           }
         },

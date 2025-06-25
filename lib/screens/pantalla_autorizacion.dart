@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:actividad4/models/usuario.dart';
+import 'package:actividad4/services/usuario_service.dart';
+import 'package:actividad4/services/vehiculo_service.dart';
 
 class AuthScreen extends StatefulWidget {
   final FirebaseAuth auth;
-  final FirebaseDatabase database;
   final VoidCallback onAuthSuccess;
+  final UsuarioService usuarioService;
+  final VehiculoService vehiculoService;
 
   const AuthScreen({
     super.key,
     required this.auth,
-    required this.database,
     required this.onAuthSuccess,
+    required this.usuarioService,
+    required this.vehiculoService,
+    database,
   });
 
   @override
@@ -20,7 +24,6 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  // Controladores para los campos de texto
   final TextEditingController _usernameOrEmailController =
       TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -28,16 +31,15 @@ class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController _emailRegController = TextEditingController();
   final TextEditingController _nombreRegController = TextEditingController();
 
-  // Estado para alternar entre Login y Registro
   bool _isLogin = true;
 
   void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // --- Lógica de Inicio de Sesión ---
   Future<void> _signIn() async {
     final usernameOrEmail = _usernameOrEmailController.text.trim();
     final password = _passwordController.text.trim();
@@ -48,52 +50,37 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     try {
-      // Buscar el email asociado al nombre de usuario en la Realtime Database
-      final usersRef = widget.database.ref("actividad4/Usuario");
-      final snapshot = await usersRef
-          .orderByChild("username")
-          .equalTo(usernameOrEmail)
-          .get();
+      final List<Usuario> allUsers = await widget.usuarioService.getUsers(
+        requireAuth: false,
+      );
+      String? emailToAuth;
 
-      if (snapshot.exists && snapshot.value != null) {
-        String? emailToAuth;
-        final userData = snapshot.value as Map<dynamic, dynamic>;
-
-        // Firebase puede devolver un mapa si hay múltiples resultados o un solo resultado.
-        if (userData.keys.length == 1 &&
-            userData.values.first is Map<dynamic, dynamic>) {
-          emailToAuth =
-              (userData.values.first as Map<dynamic, dynamic>)['email']
-                  as String?;
-        } else if (userData.isNotEmpty) {
-          for (var entry in userData.entries) {
-            final userMap = entry.value as Map<dynamic, dynamic>;
-            if (userMap['username'] == usernameOrEmail) {
-              emailToAuth = userMap['email'] as String?;
-              break;
-            }
-          }
+      for (var user in allUsers) {
+        if (user.username.toLowerCase() == usernameOrEmail.toLowerCase()) {
+          emailToAuth = user.email;
+          break;
         }
+      }
 
-        if (emailToAuth != null) {
-          // Usar el email encontrado para autenticar con Firebase Auth
-          await widget.auth.signInWithEmailAndPassword(
-            email: emailToAuth,
-            password: password,
-          );
+      if (emailToAuth != null) {
+        UserCredential userCredential = await widget.auth
+            .signInWithEmailAndPassword(email: emailToAuth, password: password);
+
+        User? user = userCredential.user;
+        if (user != null) {
           _showSnackBar("Inicio de sesión exitoso.");
           widget.onAuthSuccess();
         } else {
-          _showSnackBar(
-            "Nombre de usuario no encontrado o email no disponible.",
-          );
+          _showSnackBar("Error interno al iniciar sesión.");
         }
       } else {
         _showSnackBar("Nombre de usuario no encontrado.");
       }
     } on FirebaseAuthException catch (e) {
       String message = "Error de inicio de sesión.";
-      if (e.code == 'user-not-found' || e.code == 'wrong-password') {
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
         message = "Credenciales incorrectas.";
       } else if (e.code == 'invalid-email') {
         message = "El formato del correo electrónico es inválido.";
@@ -106,7 +93,6 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  // --- Lógica de Registro ---
   Future<void> _signUp() async {
     final email = _emailRegController.text.trim();
     final password = _passwordController.text.trim();
@@ -122,6 +108,18 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     try {
+      final List<Usuario> existingUsers = await widget.usuarioService.getUsers(
+        requireAuth: false,
+      );
+      if (existingUsers.any(
+        (user) => user.username.toLowerCase() == username.toLowerCase(),
+      )) {
+        _showSnackBar(
+          "El nombre de usuario ya está en uso. Por favor, elige otro.",
+        );
+        return;
+      }
+
       UserCredential userCredential = await widget.auth
           .createUserWithEmailAndPassword(email: email, password: password);
 
@@ -131,18 +129,17 @@ class _AuthScreenState extends State<AuthScreen> {
         final newUser = Usuario(
           id: userId,
           username: username,
-          password: "", // La contraseña no se guarda en Realtime DB
+          password: "",
           nombre: nombre,
           email: email,
         );
 
-        // Guarda la información adicional del usuario en Firebase Realtime Database
-        await widget.database
-            .ref("actividad4/Usuario")
-            .child(userId)
-            .set(newUser.toJson());
+        await widget.usuarioService.createUser(newUser);
+
         _showSnackBar("Registro exitoso y datos de usuario guardados.");
-        widget.onAuthSuccess(); // Llama al callback de éxito
+        widget.onAuthSuccess();
+      } else {
+        _showSnackBar("Error interno al registrar usuario.");
       }
     } on FirebaseAuthException catch (e) {
       String message = "Error de registro.";
@@ -161,10 +158,8 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  // --- Lógica de Restablecimiento de Contraseña ---
   Future<void> _resetPassword() async {
-    final inputEmailForReset = _usernameOrEmailController.text
-        .trim(); // Se asume que el usuario ingresó el email en el campo de login
+    final inputEmailForReset = _usernameOrEmailController.text.trim();
     if (inputEmailForReset.isEmpty || !inputEmailForReset.contains('@')) {
       _showSnackBar(
         "Por favor, ingresa un correo electrónico válido para restablecer la contraseña.",
@@ -184,7 +179,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   void dispose() {
-    // libera los controladores de texto cuando el widget ya no es necesario
     _usernameOrEmailController.dispose();
     _passwordController.dispose();
     _usernameRegController.dispose();
@@ -202,7 +196,6 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
       body: Center(
         child: SingleChildScrollView(
-          // Permite scroll si el teclado cubre los campos
           padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -213,7 +206,6 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 32.0),
 
-              // Campo para Nombre de Usuario (Login) o Correo Electrónico (Registro)
               TextField(
                 controller: _isLogin
                     ? _usernameOrEmailController
@@ -234,20 +226,19 @@ class _AuthScreenState extends State<AuthScreen> {
                 controller: _passwordController,
                 decoration: const InputDecoration(
                   labelText: "Contraseña",
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
-                obscureText: true, // Para ocultar la contraseña
+                obscureText: true,
                 keyboardType: TextInputType.visiblePassword,
               ),
               const SizedBox(height: 16.0),
 
               if (!_isLogin) ...[
-                // Campos adicionales para el registro
                 TextField(
                   controller: _usernameRegController,
                   decoration: const InputDecoration(
                     labelText: "Nombre de Usuario (Registro)",
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.text,
                 ),
@@ -257,7 +248,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   controller: _nombreRegController,
                   decoration: const InputDecoration(
                     labelText: "Nombre Completo (Registro)",
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.text,
                 ),
@@ -277,7 +268,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 onPressed: () {
                   setState(() {
                     _isLogin = !_isLogin;
-                    // Limpiar campos al cambiar entre login y registro
                     _usernameOrEmailController.clear();
                     _passwordController.clear();
                     _usernameRegController.clear();
